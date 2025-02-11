@@ -3,66 +3,7 @@ pydantic
 groq
 requests
 json
+psycopg2
+fastapi
+uvicorn
 
-# pip install psycopg2-binary
-import psycopg2
-import cloudscraper
-from bs4 import BeautifulSoup
-from scrapy.selector import Selector
-import traceback
-import pandas as pd
-import datetime
-import requests
-import os
-import re
-import json
-# Connect to the School database
-conn = psycopg2.connect(
-    dbname="",
-    user="",
-    password="",
-    host="",
-    port = 5432
-)
-query ='''SELECT DISTINCT ON (docs."applNo") 
-  "applicationDocsId", 
-  "applicationDocsTypeId", 
-  docs."applNo", 
-  "submissionType", 
-  "submissionNo", 
-  "applicationDocsTitle", 
-  "applicationDocsUrl", 
-  "applicationDocsDate", 
-  "submitToScrapeDate", 
-  mkt."marketingStatusId", 
-  "marketingStatusDescription", 
-  prod."productNo", 
-  form, 
-  strength, 
-  "drugName", 
-  "activeIngredient", 
-  "applType", 
-  "sponsorName", 
-  "fullApplNo"
-FROM public."fdanApplicationDocs" docs
-INNER JOIN public."fdanMarketingStatus" as mkt 
-  ON mkt."applNo" = docs."applNo"
-INNER JOIN public."fdanMarketingStatusLookup" as mktStLookup 
-  ON mktStLookup."marketingStatusId" = mkt."marketingStatusId"
-INNER JOIN public."fdanProducts" as prod 
-  ON prod."applNo" = docs."applNo"
-INNER JOIN public."fdanApplications" as app 
-  ON app."applNo" = docs."applNo"
- where "applicationDocsDate" >= '2018-01-01 00:00:00' 
-ORDER BY docs."applNo", "applicationDocsDate" DESC ;
-
- '''
-# LIMIT 501;
-cur = conn.cursor()
-cur.execute(query)
-
-rows = cur.fetchall()
-conn.commit()
-conn.close()
-for row in rows:
-    df.loc[len(df)] = row
