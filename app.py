@@ -116,7 +116,7 @@ async def insert_row (user_query, structured_data, reqStatusCode , responseTime,
             database = os.getenv('database'),
             user     = os.getenv('user'),
             password = os.getenv('password'),
-            host     = os.getenv('host'),,
+            host     = os.getenv('host'),
             port     = 5432
         )
 
