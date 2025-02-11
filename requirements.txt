@@ -6,4 +6,3 @@ json
 psycopg2
 fastapi
 uvicorn
-
