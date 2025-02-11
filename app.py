@@ -3,8 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 from typing import Optional, Literal
 from groq import Groq
+import datetime
 import uvicorn
 import requests
+import timeit
+import asyncpg
 import json
 import re
 import os
@@ -107,6 +110,26 @@ class Parm(BaseModel):
             return ""  # Convert empty list to an empty string
         return value
 
+async def insert_row (user_query, structured_data, reqStatusCode , responseTime, dateCreated):
+    try: 
+        conn = await asyncpg.connect(
+            database = os.getenv('database'),
+            user     = os.getenv('user'),
+            password = os.getenv('password'),
+            host     = os.getenv('host'),,
+            port     = 5432
+        )
+
+        sql = """INSERT INTO "userQueryAI" ("userQuery", "aiResponse", "statusCode", "responseTime", "dateCreated" ) VALUES ($1, $2, $3, $4, $5)"""
+        await conn.execute(sql, user_query, structured_data, reqStatusCode, str(responseTime), dateCreated )
+        await conn.close()
+        print("Row inserted successfully!")
+
+    except Exception as e:
+        print(f"Error inserting row: {e}")  
+        return {"error": str(e)}
+
+
 @app.post("/generate-parm")
 async def generate_parm(user_query: str) -> Optional[Parm]:
 
@@ -148,21 +171,31 @@ async def generate_parm(user_query: str) -> Optional[Parm]:
         ]
     }
     
+    start = timeit.default_timer()
     response = requests.post(GROQ_API_URL, headers=headers, json=payload)
+    dateCreated = datetime.datetime.now()
 
     if response.status_code == 200:
         try:
             response_data = response.json()           
             structured_data = response_data.get("choices", [{}])[0].get("message", {}).get("content", "{}").strip()    
             structured_data = re.sub(r"<think>.*?</think>", "", structured_data , flags=re.DOTALL).strip()
-
+            
             match = re.search(r"(\[.*\]|\{.*\})", structured_data, re.DOTALL)
             if match:
                 structured_data = match.group(0).strip()
-                
+
             # Parse string JSON into Python dict
-            
             structured_data = json.dumps(structured_data)
+
+            end = timeit.default_timer()
+
+            ########### Some Variable to be set ##############
+            responseTime = end - start
+            reqStatusCode = response.status_code
+
+            ########### insert row in PGADMIN ###########
+            await insert_row(user_query, structured_data, reqStatusCode, responseTime, dateCreated)
             return Response(content=structured_data, media_type="application/json")
 
         except:
