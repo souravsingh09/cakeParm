@@ -1,7 +1,6 @@
 typing
 pydantic
 groq
-json
 psycopg2
 fastapi
 uvicorn
