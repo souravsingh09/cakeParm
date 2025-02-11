@@ -1,7 +1,6 @@
 typing
 pydantic
 groq
-requests
 json
 psycopg2
 fastapi
