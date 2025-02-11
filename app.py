@@ -1,15 +1,44 @@
-from typing import Optional, Literal
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, Body
+from fastapi.middleware.cors import CORSMiddleware 
 from pydantic import BaseModel, Field, validator
+from typing import Optional, Literal
 from groq import Groq
+import uvicorn
 import requests
 import json
+import re
+import os
 
+################ APP CREATION STARTED #################
+app = FastAPI()
 
+################ APP CREATION STARTED #################
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_API_KEY = 'h'
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
 
+################ CORS to allow specific origins ################
+allowed_origins = [ 
+    "https://dev.druglabels.in",
+    "http://localhost:3000"  
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,  # Restrict to specific domains
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],  # Only allow specific HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
+
+################ Pydantic model for input validation ################
+class UserContent(BaseModel):
+    user_query : str
+
+################ Pydantic model for output validation ################
 class Parm(BaseModel):
-    """Information about a person."""
     param: Optional[str] = Field(
         default=None,
         description="Information user wants to look for. Must be from the allowed list."
@@ -26,17 +55,10 @@ class Parm(BaseModel):
         default="",
         description="Logical operator (if any) from the user query."
     )
-    searchInCountry: Literal["au", "ca", "fr", "uk", "us"] = Field(
+    searchInCountry: Literal["au", "ca", "fr", "uk", "us","eu"] = Field(
         default="",
-        description="Single country code (au, ca, fr, uk, us)."
+        description="Single country code (au, ca, fr, uk, us, eu)."
     )
-
-#         Any Section, Revision Date, Brand Name, Generic Name, Manufacturer, Label Title, Highlights, 
-#         Abuse Section, Adverse Reactions, Boxed Warning Section, Clinical Pharmacology/Clinical Studies, 
-#         Contraindications, Drug Interactions, Dosage & Administration, Dosage Form, 
-#         Indications and Usage, Information For Patients/Caregivers , 
-#         Overdosage, Preclinical Safet-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-y Data, Pregnancy & Lactation, Storage & Handling,
-#         Warnings & Precautions, Medguide Section, PIL, CMI
 
     @validator("param", pre=True)
     def normalize_param(cls, value):
@@ -85,52 +107,13 @@ class Parm(BaseModel):
             return ""  # Convert empty list to an empty string
         return value
 
-
-def extract_information(user_query: str) -> Optional[Parm]:
-    """Extract structured data from a user query using Groq's API."""
-    
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-#     system_message = (
-#     """You are an AI assistant specializing in extracting structured information from user queries. 
-#     Your task is to return only a valid JSON object or a list of JSON objects when MULTIPLE conditions exist. 
-#     The JSON must contain the following keys: 'param', 'condition', 'searchQuery', 'operators', and 'searchInCountry'.
-
-#     RULES:
-#     - 'param' must **strictly match** one of the predefined values:
-#       ["Any Section", "Revision Date", "Brand Name", "Generic Name", "Manufacturer", "Label Title", 
-#       "Highlights", "Abuse Section", "Adverse Reactions", "Boxed Warning Section", 
-#       "Clinical Pharmacology/Clinical Studies", "Contraindications", "Drug Interactions", 
-#       "Dosage & Administration", "Dosage Form", "Indications and Usage", 
-#       "Information For Patients/Caregivers", "Overdosage", "Preclinical Safety Data", 
-#       "Pregnancy & Lactation", "Storage & Handling", "Warnings & Precautions", 
-#       "Medguide Section", "PIL", "CMI"].
-
-#     - If the query **mentions a drug name**, set 'param' as `"Generic Name"`, unless context specifies otherwise.  
-#     - 'condition' must be either 'contains' or 'not contains'.  
-#     - 'searchQuery' should extract the **exact drug or term mentioned** in the query.  
-#     - **'operators' should be determined based on user input text :**
-#       - If the user explicitly states `"and"`, use `"operators": "and"`.  
-#       - If the user explicitly states `"or"`, use `"operators": "or"`.  
-#       - If there is only **one** condition, `"operators"` should be `null`.  
-#       - **Only the last object in a multi-condition query should have `"operators": null"`.**  
-#     - 'searchInCountry' should be **one of** ['au', 'ca', 'fr', 'uk', 'us'] if the searchInCountry is not present then "au,ca,fr,uk,us"  .
-
-#     **If the query contains multiple distinct conditions with OR or AND in query, return an array of JSON objects.**  
-#     Each condition must be connected with `"operators": "and"` or `"operators": "or"` depending on the query.  
-#     The **last object must always have `"operators": null"`.**
-#     **Output JSON only. Do not include explanations or additional text.**  
-#     """
-# )
+@app.post("/generate-parm")
+async def generate_parm(user_query: str) -> Optional[Parm]:
 
     system_message = (
     """You are an AI assistant specializing in extracting structured information from user queries. 
     Your task is to return only a valid JSON object or a list of JSON objects when multiple conditions exist. 
     The JSON must contain the following keys: 'param', 'condition', 'searchQuery', 'operators', and 'searchInCountry'.
-
     RULES:
     - 'param' must **strictly match** one of the predefined values:
       ["Any Section", "Revision Date", "Brand Name", "Generic Name", "Manufacturer", "Label Title", 
@@ -140,27 +123,23 @@ def extract_information(user_query: str) -> Optional[Parm]:
       "Information For Patients/Caregivers", "Overdosage", "Preclinical Safety Data", 
       "Pregnancy & Lactation", "Storage & Handling", "Warnings & Precautions", 
       "Medguide Section", "PIL", "CMI"].
-
     - If the query **mentions a drug name**, set 'param' as `"Generic Name"`, unless context specifies otherwise.  
     - 'condition' must be either 'contains' or 'not contains'.  
     - 'searchQuery' should extract the **exact drug or term mentioned** in the query.  
     - **'operators' should be determined based on user input text :**
       - If the user explicitly states `"and"`, use `"operators": "and"`.  
-      - If the user explicitly states `"or"`, use `"operators": "or"`.  
+       - If the user explicitly states `"or"` or uses ',' , use `"operators": "or"`.  
       - If there is only **one** condition, `"operators"` should be `null`.  
       - **Only the last object in a multi-condition query should have `"operators": null"`.**  
-    - 'searchInCountry' should be **one of** ['au', 'ca', 'fr', 'uk', 'us'] if the searchInCountry is not present then "au,ca,fr,uk,us"  .
+    - 'searchInCountry' should be **one of** ['au', 'ca', 'fr', 'uk', 'us', 'eu'] if the searchInCountry is not present then "au,ca,fr,uk,us,eu".
 
     **If the query contains multiple distinct conditions with OR or AND, return an array of JSON objects.**  
     Each condition must be connected with `"operators": "and"` or `"operators": "or"` depending on the query.  
     The **last object must always have `"operators": null"`.**
     **Output JSON only. Do not include explanations or additional text.**  
     """
-)
-
-
-
-    
+    )
+ 
     payload = {
         "model": "deepseek-r1-distill-llama-70b",
         "messages": [
@@ -173,22 +152,21 @@ def extract_information(user_query: str) -> Optional[Parm]:
 
     if response.status_code == 200:
         try:
-            response_data = response.json()            
-            structured_data = response_data.get("choices", [{}])[0].get("message", {}).get("content", "{}").strip()
-            return structured_data
+            response_data = response.json()           
+            structured_data = response_data.get("choices", [{}])[0].get("message", {}).get("content", "{}").strip()    
+            structured_data = re.sub(r"<think>.*?</think>", "", structured_data , flags=re.DOTALL).strip()
+
+            match = re.search(r"(\[.*\]|\{.*\})", structured_data, re.DOTALL)
+            if match:
+                structured_data = match.group(0).strip()
+                
+            # Parse string JSON into Python dict
+            
+            structured_data = json.dumps(structured_data)
+            return Response(content=structured_data, media_type="application/json")
+
         except:
             return "Please give more clear text"
     else:
         print(f"Groq API Error: {response.status_code} - {response.text}")
         return None
-    
-# Example usage
-# user_query = "generic name for medicine whose title is ibuprofen or botox"
-user_query = "generic name for ibuprofen in usa or botox in uk"
-# user_query = "ibuprofen in france"
-# user_query ="drugs for cancer in India"
-# user_query = "generic name should not condtain for ibuprofen and botox "
-# user_query = "Find me drug for cancer , post covid , pre covid in USA "
-
-result = extract_information(user_query)
-print(result)
