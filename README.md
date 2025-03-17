@@ -142,3 +142,10 @@ async def answer( data: Query , token: str = Depends(oauth2_scheme), request: Re
 
 if __name__ == "__main__":
      uvicorn.run(app, host="0.0.0.0", port=8000)
+ASSWORD = "xzdSYIApl0e8"
+HOST = "ep-proud-butterfly-a1kljb8v.ap-southeast-1.aws.neon.tech"
+ALLOWED_ORIGINS = ["https://dev.druglabels.in", "http://localhost:3000"]
+USERID ="dbo"
+CLIENT_SECRET='hello'
+SECRET_KEY='howareyou'
+ALGORITHM=HS256
